@@ -1,8 +1,26 @@
 module.exports = {
+	// BUG 2 FIX: Helper function to bypass Node.js locale issues and force OS Timezone
+	formatTargetTime: function(timestamp) {
+		const d = new Date(timestamp);
+		const h24 = d.getHours();
+		const m = d.getMinutes().toString().padStart(2, '0');
+		const s = d.getSeconds().toString().padStart(2, '0');
+		const h12 = h24 % 12 || 12;
+		const ampm = h24 >= 12 ? 'PM' : 'AM';
+
+		return {
+			t24: `${h24.toString().padStart(2, '0')}:${m}:${s}`,
+			t12: `${h12.toString().padStart(2, '0')}:${m}:${s} ${ampm}`
+		};
+	},
+
 	startWatch: function (dir) {
 		let self = this;
 
 		self.clearTimer();
+
+		// BUG 1 FIX: Memorize the direction so toggle knows how to resume
+		self.lastDirection = dir;
 
 		self.startingValue = new Date().getTime();
 		if (dir === '-') {
@@ -12,9 +30,13 @@ module.exports = {
 
 			const targetTime = new Date(self.startingValue + self.watch);
 			self.targetTime = targetTime.getTime();
+
+			// BUG 2 FIX: Use the new local time formatter
+			const times = self.formatTargetTime(self.targetTime);
+
 			self.setVariableValues({
-				target12_hms: targetTime.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }),
-				target24_hms: targetTime.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
+				target12_hms: times.t12,
+				target24_hms: times.t24,
 				isReverse: true,
 			});
 		} else {
@@ -54,7 +76,15 @@ module.exports = {
 	stopWatch: function () {
 		let self = this;
 
-		self.clearTimer();
+		// BUG 1 FIX: We only clear the interval, we DO NOT call clearTimer()
+		// This keeps isReverse and targetTime intact while paused!
+		if (self.timer) {
+			clearInterval(self.timer);
+			delete self.timer;
+		}
+
+		self.checkVariables(); // Updates isRunning to false
+		self.checkFeedbacks();
 	},
 
 	resetWatch: function () {
@@ -72,7 +102,8 @@ module.exports = {
 		if (self.timer) {
 			self.stopWatch();
 		} else {
-			self.startWatch();
+			// BUG 1 FIX: Resume in the last known direction
+			self.startWatch(self.lastDirection || '+');
 		}
 	},
 
@@ -95,11 +126,11 @@ module.exports = {
 		self.checkFeedbacks();
 
 		if (typeof self.targetTime === 'number' && !isNaN(self.targetTime)) {
-			const targetTime = new Date(self.targetTime + delta);
-			self.targetTime = targetTime.getTime();
+			self.targetTime += delta;
+			const times = self.formatTargetTime(self.targetTime);
 			self.setVariableValues({
-				target12_hms: targetTime.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }),
-				target24_hms: targetTime.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
+				target12_hms: times.t12,
+				target24_hms: times.t24,
 			});
 		}
 	},
@@ -114,11 +145,11 @@ module.exports = {
 		self.checkFeedbacks();
 
 		if (typeof self.targetTime === 'number' && !isNaN(self.targetTime)) {
-			const targetTime = new Date(self.targetTime - delta);
-			self.targetTime = targetTime.getTime();
+			self.targetTime -= delta;
+			const times = self.formatTargetTime(self.targetTime);
 			self.setVariableValues({
-				target12_hms: targetTime.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }),
-				target24_hms: targetTime.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
+				target12_hms: times.t12,
+				target24_hms: times.t24,
 			});
 		}
 	},
